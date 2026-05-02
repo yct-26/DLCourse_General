@@ -3,19 +3,21 @@ from transformers import pipeline
 from PIL import Image
 
 # 1. Setup Page Configuration
-st.set_page_config(page_title="Age Classifier", page_icon="🎂")
+st.set_page_config(page_title="Age & Gender Classifier", page_icon="👤")
 
-# 2. Load the model with caching
-# This ensures the model only loads once, making the app much faster.
+# 2. Load the models with caching
+# We load both models here so they stay in memory and don't reload on every click.
 @st.cache_resource
-def load_classifier():
-    return pipeline("image-classification", model="nateraw/vit-age-classifier")
+def load_models():
+    age_pipe = pipeline("image-classification", model="nateraw/vit-age-classifier")
+    gender_pipe = pipeline("image-classification", model="rizvandwiki/gender-classification-2")
+    return age_pipe, gender_pipe
 
-age_classifier = load_classifier()
+age_classifier, gender_classifier = load_models()
 
 # 3. Streamlit UI Elements
-st.title("🎂 Age Classification using ViT")
-st.write("Upload a photo of a face to estimate the age range using a Vision Transformer (ViT).")
+st.title("👤 Age & Gender Classification")
+st.write("Upload a photo to estimate both the age range and gender using Vision Transformers.")
 
 # File uploader
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
@@ -24,29 +26,41 @@ if uploaded_file is not None:
     # Convert and display the image
     image = Image.open(uploaded_file).convert("RGB")
     
-    # Create two columns for a cleaner layout
+    # Create two columns: Left for Image, Right for Results
     col1, col2 = st.columns(2)
 
     with col1:
         st.image(image, caption="Uploaded Image", use_container_width=True)
 
     with col2:
-        with st.spinner('Analyzing age...'):
-            # Run classification
-            age_predictions = age_classifier(image)
-            
-            # Sort predictions by score
-            age_predictions = sorted(age_predictions, key=lambda x: x['score'], reverse=True)
+        st.subheader("Analysis Results")
+        
+        with st.spinner('Analyzing image details...'):
+            # --- Age Prediction Logic ---
+            age_preds = age_classifier(image)
+            age_preds = sorted(age_preds, key=lambda x: x['score'], reverse=True)
+            top_age = age_preds[0]
 
-            # Display the top result
-            top_label = age_predictions[0]['label']
-            top_score = age_predictions[0]['score']
+            # --- Gender Prediction Logic ---
+            gender_preds = gender_classifier(image)
+            gender_preds = sorted(gender_preds, key=lambda x: x['score'], reverse=True)
+            top_gender = gender_preds[0]
 
-            st.subheader("Prediction Results")
-            st.success(f"**Predicted Age Range: {top_label}**")
-            st.info(f"Confidence: {top_score:.2%}")
+            # Display Age Result
+            st.markdown("### **Age Group**")
+            st.success(f"**{top_age['label']}**")
+            st.caption(f"Confidence: {top_age['score']:.2%}")
 
-            # Optional: Show other possibilities
-            with st.expander("See all probability scores"):
-                for pred in age_predictions:
-                    st.write(f"{pred['label']}: {pred['score']:.4f}")
+            st.divider()
+
+            # Display Gender Result
+            st.markdown("### **Gender**")
+            st.info(f"**{top_gender['label'].capitalize()}**")
+            st.caption(f"Confidence: {top_gender['score']:.2%}")
+
+            # Optional: Detailed Probabilities
+            with st.expander("View detailed breakdown"):
+                st.write("**Age Scores:**")
+                st.json(age_preds)
+                st.write("**Gender Scores:**")
+                st.json(gender_preds)
